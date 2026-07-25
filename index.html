@@ -207,6 +207,29 @@
   @keyframes eburst{ 0%{ transform:translate(-50%,-50%) scale(.3); opacity:0; } 18%{ opacity:1; }
     100%{ transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1.3) rotate(220deg); opacity:0; } }
 
+  /* ---- ジャグラー風 GOGO! ペカリ ---- */
+  .gogo{ position:fixed; z-index:79; left:50%; top:19%; pointer-events:none; opacity:0;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    transform:translate(-50%,-50%) scale(.3); }
+  .gogo.show{ opacity:1; transform:translate(-50%,-50%) scale(1);
+    transition:transform .25s cubic-bezier(.2,1.5,.4,1), opacity .2s; }
+  .gogo .lamp{ font-weight:900; font-style:italic; font-size:62px; letter-spacing:.01em; color:#ff2323;
+    padding:14px 32px 18px; border-radius:20px; -webkit-text-stroke:2.5px #fff;
+    text-shadow:0 2px 5px rgba(0,0,0,.45),0 0 14px rgba(255,255,255,.5); paint-order:stroke fill;
+    background:radial-gradient(circle at 50% 32%, #fff6b0, #ffcf33 42%, #ff8a00 82%);
+    border:4px solid rgba(255,255,255,.9);
+    box-shadow:0 0 42px 8px rgba(255,200,40,.85), inset 0 0 20px rgba(255,255,255,.7), 0 8px 24px rgba(0,0,0,.5);
+    animation:peka .28s steps(1) infinite; }
+  .gogo .pekasub{ font-size:15px; font-weight:800; color:#fff; letter-spacing:.06em;
+    text-shadow:0 0 12px var(--neon-yellow),0 0 24px var(--neon-pink); animation:peka .28s steps(1) infinite; }
+  .gogo.premium .lamp{ -webkit-text-stroke:2px rgba(0,0,0,.4);
+    background:conic-gradient(from 0deg,#ff2fb9,#ffe14d,#39e6ff,#b14bff,#ff2fb9);
+    box-shadow:0 0 54px 12px rgba(255,120,220,.85), inset 0 0 24px rgba(255,255,255,.8), 0 8px 24px rgba(0,0,0,.5);
+    animation:peka .22s steps(1) infinite, gogohue 1s linear infinite; }
+  @keyframes gogohue{ to{ filter:hue-rotate(360deg);} }
+  @keyframes peka{ 0%,44%{ opacity:1; transform:scale(1.06); filter:brightness(1.25); }
+    45%,100%{ opacity:.36; transform:scale(1); filter:brightness(.6); } }
+
   @media (max-height:680px){
     .reel{ height:160px; } .cell{ height:62px; } .reel-line{ height:62px; }
     .cell .emo{ font-size:32px; } .cell .nm{ font-size:22px; }
@@ -288,6 +311,10 @@
   </div>
 
   <div class="reach" id="reach">🔥 リーチ！！ 🔥</div>
+  <div class="gogo" id="gogo">
+    <div class="lamp">GOGO!</div>
+    <div class="pekasub">ペカッ！強い一杯だ🔥</div>
+  </div>
   <div class="kanpai" id="kanpai"><span>🥂 かんぱーい！</span></div>
 
 <script>
@@ -497,6 +524,25 @@ function sndWin(){ /* big landing */
   tone(1046,t+0.42,0.8,"sawtooth",0.09,0.5);
   boom(t+0.42,110,0.6,0.4,0.3);
 }
+function sndGako(){ /* ジャグラー風「ガコッ」 mechanical announce */
+  const c=ac(); if(!c||!store.sound) return; const t=c.currentTime;
+  const o=c.createOscillator(), g=c.createGain(); o.type="square";
+  o.frequency.setValueAtTime(190,t); o.frequency.exponentialRampToValueAtTime(58,t+0.09);
+  g.gain.setValueAtTime(0.5,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.13);
+  o.connect(g); out(g,0.15); o.start(t); o.stop(t+0.15);
+  boom(t,130,0.16,0.55,0.2); crash(t,0.06,0.28,2200);
+}
+function sndPeka(t0,premium){ /* single bright ペカ chime */
+  tone(premium?2093:1568,t0,0.2,"triangle",0.18,0.45);
+  tone(premium?2793:2093,t0,0.2,"sine",0.12,0.45);
+}
+function sndPekari(premium){
+  const c=ac(); if(!c||!store.sound) return; const t=c.currentTime;
+  sndGako();
+  const beeps=premium?6:4, gap=premium?0.22:0.28;
+  for(let i=0;i<beeps;i++) sndPeka(t+0.26+i*gap,premium);
+  if(premium){ crash(t,1.4,0.26); [1046,1318,1568,2093].forEach((f,i)=>tone(f,t+0.3+i*0.1,0.5,"triangle",0.12,0.6)); }
+}
 
 /* ============================================================
    Haptics
@@ -584,18 +630,34 @@ function spin(){
   requestAnimationFrame(frame);
 }
 
+/* ジャグラー風ペカリ: 強め(str>=4)の一杯のときだけ GOGO! ランプ告知 */
+function pekari(premium){
+  const g=document.getElementById("gogo");
+  g.querySelector(".pekasub").textContent = premium ? "ペカッ！プレミア級の一杯だ🌈" : "ペカッ！強い一杯だ🔥";
+  g.classList.toggle("premium", premium);
+  g.classList.remove("show"); void g.offsetWidth; g.classList.add("show");
+  sndPekari(premium);
+  buzz(premium ? [0,70,40,70,40,70,40,70,40,160] : [0,70,40,70,40,70,40,140]);
+  const dur = premium ? 2100 : 1500;
+  setTimeout(()=>g.classList.remove("show"), dur);
+  return dur;
+}
+
 function land(d){
   spinning=false; spinBoost=1;
+  const strong = d.str>=4, premium = d.str>=5;
   buzz([0,90,50,200,40,140]);
   sndWin();
   flash();
   shockwave();
-  confettiBurst(240);
+  confettiBurst(premium?320:240);
   setTimeout(()=>confettiBurst(120), 240);
   emojiBurst(d.emo);
   showKanpai();
   store.count = store.count+1; renderCount();
-  setTimeout(()=>showResult(d), 640);
+  let delay=640;
+  if(strong){ const pd=pekari(premium); delay=pd+320; }  // let the lamp blink before the card
+  setTimeout(()=>showResult(d), delay);
 }
 
 /* ============================================================
