@@ -1,0 +1,17 @@
+{
+  "name": "次の一杯｜キンミヤ ルーレット",
+  "short_name": "次の一杯",
+  "description": "キンミヤ焼酎で作る次の一杯を、ド派手なルーレットで決めるアプリ。",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c0028",
+  "theme_color": "#0c0028",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

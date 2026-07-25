@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>次の一杯｜キンミヤ ルーレット</title>
+<meta name="description" content="キンミヤ焼酎で作る次の一杯をド派手なルーレットで決めるアプリ" />
+
+<!-- iOS standalone / home-screen app -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="次の一杯" />
+<meta name="theme-color" content="#0c0028" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" href="icons/favicon-96.png" sizes="96x96" type="image/png" />
+
+<style>
+  :root{
+    --bg0:#0c0028; --bg1:#1a0033; --bg2:#2b0052;
+    --neon-pink:#ff2fb9; --neon-cyan:#39e6ff; --neon-yellow:#ffe14d;
+    --neon-purple:#b14bff; --amber:#ff9d2e;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; margin:0; }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    color:#fff; overflow:hidden; position:fixed; inset:0;
+    background:
+      radial-gradient(120% 90% at 50% -10%, #3a0066 0%, transparent 55%),
+      radial-gradient(140% 120% at 50% 120%, #ff1e88 0%, transparent 45%),
+      linear-gradient(160deg,var(--bg1),var(--bg0) 60%,#05001a);
+    background-attachment:fixed;
+    user-select:none; -webkit-user-select:none; touch-action:manipulation;
+  }
+  canvas.fx{ position:fixed; inset:0; width:100%; height:100%; pointer-events:none; }
+  #bubbles{ z-index:0; }
+  #confetti{ z-index:60; }
+
+  .app{
+    position:relative; z-index:10; height:100%;
+    display:flex; flex-direction:column; align-items:center;
+    padding:calc(var(--safe-t) + 10px) 18px calc(var(--safe-b) + 18px);
+  }
+
+  /* ---- header ---- */
+  header{ width:100%; max-width:560px; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .brand{ display:flex; flex-direction:column; line-height:1.1; min-width:0; }
+  .brand .sub{ font-size:10.5px; letter-spacing:.3em; color:var(--neon-cyan);
+    text-shadow:0 0 8px var(--neon-cyan); opacity:.9; }
+  .brand .ttl{ font-size:21px; font-weight:900; letter-spacing:-.01em; white-space:nowrap;
+    background:linear-gradient(90deg,var(--neon-yellow),var(--neon-pink),var(--neon-cyan));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 10px rgba(255,80,200,.5)); }
+  .counter{ text-align:right; font-size:11px; color:#ffd9f2; opacity:.85; flex:none; white-space:nowrap; }
+  .counter b{ display:block; font-size:22px; color:var(--neon-yellow);
+    text-shadow:0 0 12px rgba(255,225,77,.7); font-variant-numeric:tabular-nums; }
+
+  /* ---- slot / stage ---- */
+  .stage{
+    flex:1; width:100%; max-width:560px; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:22px; position:relative;
+  }
+  .reel{
+    position:relative; width:100%; height:190px; border-radius:26px;
+    background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.35));
+    box-shadow:
+      inset 0 0 0 2px rgba(255,255,255,.10),
+      inset 0 20px 40px rgba(0,0,0,.55),
+      0 0 40px rgba(177,75,255,.35), 0 0 80px rgba(57,230,255,.18);
+    overflow:hidden;
+  }
+  .reel::before,.reel::after{ content:""; position:absolute; left:0; right:0; height:64px; z-index:3; pointer-events:none; }
+  .reel::before{ top:0; background:linear-gradient(180deg, rgba(6,0,26,.95), transparent); }
+  .reel::after{ bottom:0; background:linear-gradient(0deg, rgba(6,0,26,.95), transparent); }
+  .reel-line{ position:absolute; left:8px; right:8px; top:50%; height:74px; transform:translateY(-50%);
+    border-radius:14px; z-index:4; pointer-events:none;
+    box-shadow:0 0 0 2px var(--neon-yellow), 0 0 24px rgba(255,225,77,.55); }
+  .reel-strip{ position:absolute; left:0; right:0; top:0; will-change:transform; }
+  .cell{ height:74px; display:flex; align-items:center; justify-content:center; gap:10px; padding:0 14px; }
+  .cell .emo{ font-size:34px; flex:none; filter:drop-shadow(0 3px 6px rgba(0,0,0,.5)); }
+  .cell .nm{ font-size:clamp(18px,5.6vw,25px); font-weight:800; letter-spacing:-.01em; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; text-shadow:0 0 14px rgba(255,255,255,.25); }
+
+  /* ---- decide button ---- */
+  .decide{
+    position:relative; border:none; cursor:pointer; color:#1a0033;
+    font-size:27px; font-weight:900; letter-spacing:.14em; padding:20px 30px;
+    border-radius:999px; min-width:260px;
+    background:linear-gradient(135deg,var(--neon-yellow),#ffa53a 45%,var(--neon-pink));
+    box-shadow:0 10px 30px rgba(255,47,185,.5), 0 0 0 3px rgba(255,255,255,.25) inset;
+    animation:pulse 1.5s ease-in-out infinite; transition:transform .08s ease;
+    text-shadow:0 1px 0 rgba(255,255,255,.4);
+  }
+  .decide:active{ transform:scale(.94); }
+  .decide[disabled]{ opacity:.55; animation:none; }
+  @keyframes pulse{ 0%,100%{ box-shadow:0 10px 30px rgba(255,47,185,.45), 0 0 0 3px rgba(255,255,255,.25) inset, 0 0 0 0 rgba(255,225,77,.55);}
+    50%{ box-shadow:0 12px 40px rgba(255,47,185,.65), 0 0 0 3px rgba(255,255,255,.25) inset, 0 0 44px 14px rgba(255,225,77,0);} }
+
+  .hint{ font-size:12px; letter-spacing:.2em; color:#c9b6ff; opacity:.75; }
+
+  /* ---- filter chips ---- */
+  .filters{ width:100%; max-width:560px; display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .chip{ font-size:12.5px; font-weight:700; padding:8px 14px; border-radius:999px; cursor:pointer;
+    color:#e9d6ff; background:rgba(255,255,255,.06); border:1.5px solid rgba(255,255,255,.14);
+    transition:all .15s ease; }
+  .chip.on{ color:#12002e; background:linear-gradient(120deg,var(--neon-cyan),var(--neon-purple));
+    border-color:transparent; box-shadow:0 0 16px rgba(57,230,255,.5); }
+
+  /* ---- toolbar ---- */
+  .toolbar{ width:100%; max-width:560px; display:flex; gap:8px; justify-content:center; }
+  .tbtn{ flex:1; font-size:12px; font-weight:700; color:#d9c8ff; cursor:pointer;
+    padding:11px 8px; border-radius:14px; background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.12); text-align:center; }
+  .tbtn.off{ opacity:.45; }
+
+  /* ---- result overlay ---- */
+  .overlay{ position:fixed; inset:0; z-index:70; display:none; align-items:flex-start; justify-content:center;
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding:calc(var(--safe-t) + 20px) 20px calc(var(--safe-b) + 20px);
+    background:radial-gradient(120% 90% at 50% 30%, rgba(60,0,110,.55), rgba(3,0,18,.9));
+    backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); }
+  .overlay .card{ margin:auto; }
+  .overlay.show{ display:flex; animation:ovin .35s ease; }
+  @keyframes ovin{ from{ opacity:0; } to{ opacity:1; } }
+  .card{ position:relative; width:100%; max-width:440px; border-radius:30px; padding:26px 24px 24px;
+    text-align:center; background:linear-gradient(180deg, rgba(40,0,80,.92), rgba(12,0,40,.96));
+    box-shadow:0 20px 70px rgba(0,0,0,.6), inset 0 0 0 2px rgba(255,255,255,.10),
+      0 0 60px rgba(255,47,185,.35); animation:cardpop .55s cubic-bezier(.2,1.3,.5,1); }
+  @keyframes cardpop{ 0%{ transform:scale(.5) translateY(40px); opacity:0; } 60%{ transform:scale(1.05); }
+    100%{ transform:scale(1) translateY(0); opacity:1; } }
+  .card .verdict{ font-size:12px; letter-spacing:.4em; color:var(--neon-cyan); text-shadow:0 0 10px var(--neon-cyan); }
+  .card .bigemo{ font-size:96px; line-height:1.1; margin:6px 0 2px; display:inline-block; animation:bob 1.6s ease-in-out infinite; }
+  @keyframes bob{ 0%,100%{ transform:translateY(0) rotate(-3deg);} 50%{ transform:translateY(-10px) rotate(3deg);} }
+  .card .drink{ font-size:34px; font-weight:900;
+    background:linear-gradient(90deg,var(--neon-yellow),var(--neon-pink),var(--neon-cyan));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 14px rgba(255,80,200,.6)); animation:glitch 2.4s infinite; }
+  @keyframes glitch{ 0%,92%,100%{ transform:none; } 93%{ transform:translate(-2px,1px);} 95%{ transform:translate(2px,-1px);} 97%{ transform:translate(-1px,0);} }
+  .card .yomi{ font-size:13px; color:#c9b6ff; letter-spacing:.12em; margin-top:2px; }
+  .card .cmt{ font-size:14px; color:#ffe6f7; margin:14px 6px 6px; line-height:1.6; }
+
+  .recipe{ text-align:left; margin:14px 0 6px; background:rgba(0,0,0,.28); border-radius:18px; padding:14px 16px;
+    border:1px solid rgba(255,255,255,.10); }
+  .recipe h4{ margin:0 0 8px; font-size:12px; letter-spacing:.22em; color:var(--neon-yellow); }
+  .recipe .ing{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .recipe .ing span{ font-size:12px; padding:5px 10px; border-radius:999px; background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.12); }
+  .recipe ol{ margin:0; padding-left:18px; }
+  .recipe li{ font-size:13.5px; line-height:1.7; color:#efe4ff; }
+
+  .meters{ display:flex; gap:14px; margin:14px 2px 4px; }
+  .meter{ flex:1; }
+  .meter .lab{ font-size:11px; color:#c9b6ff; letter-spacing:.15em; margin-bottom:5px; display:flex; justify-content:space-between; }
+  .bar{ height:9px; border-radius:999px; background:rgba(255,255,255,.10); overflow:hidden; }
+  .bar > i{ display:block; height:100%; border-radius:999px; width:0; transition:width .8s cubic-bezier(.2,1,.3,1); }
+  .bar.str > i{ background:linear-gradient(90deg,#ffd24d,#ff5a3c); box-shadow:0 0 12px rgba(255,90,60,.6); }
+  .bar.fiz > i{ background:linear-gradient(90deg,#39e6ff,#b14bff); box-shadow:0 0 12px rgba(57,230,255,.6); }
+
+  .again{ margin-top:18px; width:100%; border:none; cursor:pointer; color:#12002e; font-size:20px; font-weight:900;
+    letter-spacing:.14em; padding:17px; border-radius:999px;
+    background:linear-gradient(135deg,var(--neon-cyan),var(--neon-purple));
+    box-shadow:0 10px 30px rgba(57,230,255,.4); transition:transform .08s ease; }
+  .again:active{ transform:scale(.95); }
+  .close{ position:absolute; top:12px; right:16px; font-size:24px; color:#fff; opacity:.6; cursor:pointer;
+    background:none; border:none; }
+
+  .kanpai{ position:fixed; z-index:80; inset:0; display:none; align-items:center; justify-content:center; pointer-events:none; }
+  .kanpai.show{ display:flex; }
+  .kanpai span{ font-size:74px; font-weight:900; letter-spacing:.1em;
+    background:linear-gradient(90deg,var(--neon-yellow),var(--neon-pink));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 40px rgba(255,225,77,.6); animation:kan .9s ease forwards; }
+  @keyframes kan{ 0%{ transform:scale(.3) rotate(-12deg); opacity:0; } 40%{ transform:scale(1.15) rotate(4deg); opacity:1; }
+    70%{ transform:scale(1) rotate(0);} 100%{ transform:scale(1.4); opacity:0; } }
+
+  @media (max-height:680px){
+    .reel{ height:160px; } .cell{ height:62px; } .reel-line{ height:62px; }
+    .cell .emo{ font-size:32px; } .cell .nm{ font-size:22px; }
+    .decide{ font-size:23px; padding:16px 26px; }
+    .card .bigemo{ font-size:74px; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="bubbles" class="fx"></canvas>
+  <canvas id="confetti" class="fx"></canvas>
+
+  <div class="app">
+    <header>
+      <div class="brand">
+        <span class="sub">KINMIYA ROULETTE</span>
+        <span class="ttl">次の一杯、なに飲む？</span>
+      </div>
+      <div class="counter">今日の乾杯<b id="count">0</b>杯</div>
+    </header>
+
+    <div class="stage">
+      <div class="reel" id="reel">
+        <div class="reel-strip" id="strip"></div>
+        <div class="reel-line"></div>
+      </div>
+      <button class="decide" id="decide">🎰 きめる！</button>
+      <div class="hint" id="hint">ボタンをタップして運命の一杯を</div>
+    </div>
+
+    <div class="filters" id="filters">
+      <div class="chip on" data-f="all">ぜんぶ</div>
+      <div class="chip" data-f="fizz">炭酸あり</div>
+      <div class="chip" data-f="nofizz">炭酸なし</div>
+      <div class="chip" data-f="strong">強め</div>
+      <div class="chip" data-f="light">軽め</div>
+    </div>
+
+    <div class="toolbar">
+      <div class="tbtn" id="tSound">🔊 サウンド</div>
+      <div class="tbtn" id="tHaptic">📳 バイブ</div>
+      <div class="tbtn" id="tReset">↺ カウンタ</div>
+    </div>
+  </div>
+
+  <!-- result -->
+  <div class="overlay" id="overlay">
+    <div class="card">
+      <button class="close" id="close">×</button>
+      <div class="verdict">本日のご神託は…</div>
+      <div class="bigemo" id="rEmo">🍋</div>
+      <div class="drink" id="rName">レモンサワー</div>
+      <div class="yomi" id="rYomi"></div>
+      <div class="cmt" id="rCmt"></div>
+
+      <div class="recipe">
+        <h4>材料</h4>
+        <div class="ing" id="rIng"></div>
+        <h4>つくりかた</h4>
+        <ol id="rSteps"></ol>
+      </div>
+
+      <div class="meters">
+        <div class="meter">
+          <div class="lab"><span>強さ</span><span id="rStrLab"></span></div>
+          <div class="bar str"><i id="rStrBar"></i></div>
+        </div>
+        <div class="meter">
+          <div class="lab"><span>炭酸</span><span id="rFizLab"></span></div>
+          <div class="bar fiz"><i id="rFizBar"></i></div>
+        </div>
+      </div>
+
+      <button class="again" id="again">🍶 もう一杯きめる！</button>
+    </div>
+  </div>
+
+  <div class="kanpai" id="kanpai"><span>🥂 かんぱーい！</span></div>
+
+<script>
+/* ============================================================
+   キンミヤ焼酎で作れるドリンク（架空の外部依存なし・完全オフライン）
+   ============================================================ */
+const DRINKS = [
+  { name:"キンミヤレモンサワー", yomi:"KINMIYA LEMON SOUR", emo:"🍋", str:3, fiz:5,
+    cmt:"王道にして頂点。キンミヤの澄んだ甘みがレモンで無限に飲める危険な一杯。",
+    ing:["キンミヤ 60ml","レモン果汁 1/2個","無糖炭酸 適量","氷 たっぷり"],
+    steps:["氷を詰めたグラスにキンミヤを注ぐ","レモンを搾って入れる","冷えた炭酸をゆっくり注ぐ","一度だけ縦に混ぜて完成"] },
+  { name:"生キンミヤ 炭酸割り", yomi:"NAMA KINMIYA SODA", emo:"🫧", str:3, fiz:5,
+    cmt:"割り物は炭酸だけ。キンミヤの実力が丸裸になる硬派な生。",
+    ing:["キンミヤ 60ml","無糖炭酸 120ml","氷"],
+    steps:["キンキンに冷やしたグラスに氷","キンミヤを注ぐ","炭酸を静かに注ぎ、混ぜすぎない"] },
+  { name:"緑茶ハイ", yomi:"GREEN TEA HIGH", emo:"🍵", str:3, fiz:1,
+    cmt:"渋みと旨みでいくらでも。食事に最強に寄り添う定番ハイ。",
+    ing:["キンミヤ 60ml","冷たい緑茶 150ml","氷"],
+    steps:["氷を入れたジョッキにキンミヤ","濃いめの緑茶を注ぐ","軽く混ぜる"] },
+  { name:"ウーロンハイ", yomi:"OOLONG HIGH", emo:"🧋", str:3, fiz:1,
+    cmt:"香ばしさで箸が進む。ザ・大衆酒場の味。",
+    ing:["キンミヤ 60ml","ウーロン茶 150ml","氷"],
+    steps:["ジョッキに氷とキンミヤ","冷たいウーロン茶を注ぐ","ひと混ぜ"] },
+  { name:"ホッピー", yomi:"HOPPY SET", emo:"🍺", str:3, fiz:4,
+    cmt:"ナカ（キンミヤ）とソト（ホッピー）で調整自在。下町の魂。",
+    ing:["キンミヤ 45ml（ナカ）","ホッピー 1本（ソト）","キンキンの氷"],
+    steps:["よく冷やしたジョッキにキンミヤ","ホッピーを勢いよく注ぐ","混ぜずに泡を楽しむ"] },
+  { name:"梅干しサワー", yomi:"UMEBOSHI SOUR", emo:"🔴", str:3, fiz:4,
+    cmt:"塩気と酸味でエンドレス。潰す量で味変も自由自在。",
+    ing:["キンミヤ 60ml","梅干し 1〜2個","無糖炭酸 適量","氷"],
+    steps:["グラスに梅干しを入れて軽く潰す","氷とキンミヤを注ぐ","炭酸で満たす"] },
+  { name:"コーラハイ", yomi:"COLA HIGH", emo:"🥤", str:3, fiz:5,
+    cmt:"背徳の甘さ。キューバリブレのキンミヤ版、ライムを添えて。",
+    ing:["キンミヤ 45ml","コーラ 120ml","ライム 1切れ","氷"],
+    steps:["氷とキンミヤをグラスへ","コーラを注ぐ","ライムを搾って落とす"] },
+  { name:"カルピスサワー", yomi:"CALPIS SOUR", emo:"🥛", str:2, fiz:4,
+    cmt:"甘酸っぱ乳酸系。お酒が苦手な人もぐいぐい。",
+    ing:["キンミヤ 45ml","カルピス原液 30ml","無糖炭酸 120ml","氷"],
+    steps:["グラスにカルピスとキンミヤ","よく混ぜる","氷を入れ炭酸を注ぐ"] },
+  { name:"ジンジャーハイ", yomi:"GINGER HIGH", emo:"🫚", str:3, fiz:5,
+    cmt:"辛口ジンジャーでキリッと。生姜のキレが後を引く。",
+    ing:["キンミヤ 60ml","ジンジャーエール（辛口）150ml","氷"],
+    steps:["氷とキンミヤをグラスに","ジンジャーエールを注ぐ","レモンがあれば少々"] },
+  { name:"トマトハイ", yomi:"TOMATO HIGH", emo:"🍅", str:3, fiz:1,
+    cmt:"栄養満点の言い訳つき。塩ひとつまみで劇的に旨い。",
+    ing:["キンミヤ 45ml","トマトジュース 150ml","塩ひとつまみ","氷"],
+    steps:["氷を入れたグラスにキンミヤ","トマトジュースを注ぐ","塩を落として軽く混ぜる"] },
+  { name:"グレフルサワー", yomi:"GRAPEFRUIT SOUR", emo:"🍊", str:3, fiz:5,
+    cmt:"ほろ苦さと爽快感。生搾りなら気分は昇天。",
+    ing:["キンミヤ 60ml","グレープフルーツ 1/2個","無糖炭酸 適量","氷"],
+    steps:["グレフルを搾ってグラスへ","氷とキンミヤを注ぐ","炭酸で満たし軽く混ぜる"] },
+  { name:"シークヮーサーサワー", yomi:"SHIKUWASA SOUR", emo:"🟢", str:3, fiz:5,
+    cmt:"沖縄の風。爽やかな酸味で夏がとまらない。",
+    ing:["キンミヤ 60ml","シークヮーサー果汁 20ml","無糖炭酸 適量","氷"],
+    steps:["氷とキンミヤをグラスに","シークヮーサーを加える","炭酸を注ぐ"] },
+  { name:"巨峰サワー", yomi:"KYOHO GRAPE SOUR", emo:"🍇", str:2, fiz:4,
+    cmt:"華やかな葡萄の甘み。デザート感覚の乾杯。",
+    ing:["キンミヤ 45ml","巨峰シロップ 25ml","無糖炭酸 120ml","氷"],
+    steps:["シロップとキンミヤをグラスに","氷を入れる","炭酸を注ぎ軽く混ぜる"] },
+  { name:"バイスサワー", yomi:"BAISU SOUR", emo:"🟣", str:3, fiz:4,
+    cmt:"赤しその下町サワー。ほんのり甘酸っぱい紫色の魔法。",
+    ing:["キンミヤ 45ml","バイスシロップ（赤しそ）30ml","無糖炭酸 120ml","氷"],
+    steps:["グラスにバイスとキンミヤ","氷を入れる","炭酸で割ってひと混ぜ"] },
+  { name:"ラムネサワー", yomi:"RAMUNE SOUR", emo:"🔵", str:2, fiz:5,
+    cmt:"夏祭りの記憶。しゅわっと甘い青春の味。",
+    ing:["キンミヤ 45ml","ラムネシロップ 25ml","無糖炭酸 130ml","氷"],
+    steps:["シロップとキンミヤを混ぜる","氷を入れる","炭酸を注ぐ"] },
+  { name:"紅茶ハイ", yomi:"BLACK TEA HIGH", emo:"🫖", str:3, fiz:1,
+    cmt:"無糖アイスティーで大人の香り。レモンを浮かべて優雅に。",
+    ing:["キンミヤ 60ml","無糖アイスティー 150ml","レモン 1切れ","氷"],
+    steps:["氷とキンミヤをグラスに","アイスティーを注ぐ","レモンを添える"] },
+  { name:"キンミヤ牛乳割り", yomi:"KINMIYA MILK", emo:"🥛", str:2, fiz:1,
+    cmt:"まさかの牛乳。まろやかで意外なほど旨い裏メニュー。",
+    ing:["キンミヤ 45ml","冷たい牛乳 120ml","氷","お好みでガムシロ"],
+    steps:["氷を入れたグラスにキンミヤ","牛乳を注ぐ","甘みが欲しければガムシロを少々"] },
+  { name:"キンミヤロック", yomi:"ON THE ROCKS", emo:"🧊", str:5, fiz:1,
+    cmt:"純度で勝負。大きな氷でじっくり、キンミヤの甘みを堪能。",
+    ing:["キンミヤ 90ml","大きめの氷 1〜2個"],
+    steps:["大きな氷をグラスに入れる","キンミヤをゆっくり注ぐ","氷を回して少し冷やす"] },
+  { name:"キンミヤお湯割り", yomi:"OYUWARI (HOT)", emo:"♨️", str:4, fiz:1,
+    cmt:"寒い夜の相棒。梅干しを沈めれば身も心もほっこり。",
+    ing:["キンミヤ 60ml","お湯 90ml","お好みで梅干し"],
+    steps:["グラスに先にお湯を注ぐ","キンミヤを後入れする","香りを立たせて完成"] },
+  { name:"コーヒー牛乳割り", yomi:"COFFEE MILK", emo:"☕", str:2, fiz:1,
+    cmt:"締めの一杯にも。デザートみたいなご褒美カクテル。",
+    ing:["キンミヤ 40ml","コーヒー牛乳 130ml","氷"],
+    steps:["氷を入れたグラスにキンミヤ","コーヒー牛乳を注ぐ","そっと混ぜる"] },
+];
+
+/* ---------- state ---------- */
+const store = {
+  get sound(){ return localStorage.getItem("k_sound") !== "0"; },
+  set sound(v){ localStorage.setItem("k_sound", v ? "1" : "0"); },
+  get haptic(){ return localStorage.getItem("k_haptic") !== "0"; },
+  set haptic(v){ localStorage.setItem("k_haptic", v ? "1" : "0"); },
+  get count(){ return +(localStorage.getItem("k_count") || 0); },
+  set count(v){ localStorage.setItem("k_count", v); },
+};
+let filter = "all";
+let spinning = false;
+
+function pool(){
+  return DRINKS.filter(d=>{
+    if(filter==="fizz") return d.fiz>=3;
+    if(filter==="nofizz") return d.fiz<3;
+    if(filter==="strong") return d.str>=4;
+    if(filter==="light") return d.str<=2;
+    return true;
+  });
+}
+
+/* ============================================================
+   Audio engine (WebAudio, no files)
+   ============================================================ */
+let AC=null;
+function ac(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(AC && AC.state==="suspended") AC.resume(); return AC; }
+function tone(freq,t0,dur,type="triangle",vol=0.3){
+  const c=ac(); if(!c||!store.sound) return;
+  const o=c.createOscillator(), g=c.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t0);
+  g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(vol,t0+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  o.connect(g).connect(c.destination); o.start(t0); o.stop(t0+dur+0.02);
+}
+function noiseBurst(t0,dur,vol=0.25){
+  const c=ac(); if(!c||!store.sound) return;
+  const n=Math.floor(c.sampleRate*dur), buf=c.createBuffer(1,n,c.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const s=c.createBufferSource(); s.buffer=buf;
+  const g=c.createGain(); g.gain.value=vol;
+  const f=c.createBiquadFilter(); f.type="bandpass"; f.frequency.value=1800;
+  s.connect(f).connect(g).connect(c.destination); s.start(t0);
+}
+function sndClick(){ const c=ac(); if(!c) return; tone(680,c.currentTime,0.06,"square",0.2); }
+function sndTick(){ const c=ac(); if(!c) return; tone(1200,c.currentTime,0.03,"square",0.12); }
+function sndDrumroll(dur){ const c=ac(); if(!c||!store.sound) return; let t=c.currentTime;
+  const n=Math.floor(dur/0.045); for(let i=0;i<n;i++){ noiseBurst(t,0.04,0.18); t+=0.045; } }
+function sndFanfare(){ const c=ac(); if(!c) return; const t=c.currentTime;
+  [ [523,0],[659,0.09],[784,0.18],[1046,0.28] ].forEach(([f,dt])=>tone(f,t+dt,0.5,"triangle",0.32));
+  tone(1568,t+0.28,0.7,"sine",0.18); noiseBurst(t+0.28,0.5,0.12); }
+
+/* ============================================================
+   Haptics
+   ============================================================ */
+function buzz(p){ if(store.haptic && navigator.vibrate) navigator.vibrate(p); }
+
+/* ============================================================
+   Reel (slot strip)
+   ============================================================ */
+const strip=document.getElementById("strip");
+function cellH(){ return document.querySelector('.reel-line').offsetHeight; }
+let stripItems=[];
+function buildStrip(list){
+  const reps=Math.max(6, Math.ceil(60/list.length));
+  stripItems=[];
+  for(let r=0;r<reps;r++) for(const d of list) stripItems.push(d);
+  strip.innerHTML = stripItems.map(d=>
+    `<div class="cell" style="height:${cellH()}px"><span class="emo">${d.emo}</span><span class="nm">${d.name}</span></div>`
+  ).join("");
+}
+buildStrip(pool());
+
+function centerOffset(){ return (document.getElementById("reel").offsetHeight - cellH())/2; }
+function setY(y){ strip.style.transform=`translateY(${y}px)`; }
+setY(centerOffset());
+
+/* ============================================================
+   Spin!
+   ============================================================ */
+function spin(){
+  if(spinning) return;
+  const list=pool();
+  buildStrip(list);
+  const h=cellH();
+  const winner=Math.floor(Math.random()*list.length);
+  // target index near the end of the strip for a long travel
+  const baseCount=stripItems.length;
+  let targetIdx=baseCount - list.length + winner;
+  const targetY = centerOffset() - targetIdx*h;
+
+  spinning=true;
+  document.getElementById("decide").disabled=true;
+  document.getElementById("hint").textContent="運命をシャッフル中…";
+  ac(); sndDrumroll(2.1); buzz([0,25,25,25,25,25,25,25,25,25,25,25,25]);
+
+  const startY=centerOffset();
+  const dur=2200;
+  const t0=performance.now();
+  let lastTick=-1;
+  function easeOutBack(x){ const c1=1.2, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
+  function frame(now){
+    let p=(now-t0)/dur; if(p>1) p=1;
+    const e=p<0.86 ? (1-Math.pow(1-p/0.86,3)) : easeOutBack((p-0.86)/0.14)*0 + 1; // fast then settle
+    const eased = p<1 ? 1-Math.pow(1-p,3) : 1;
+    const y=startY+(targetY-startY)*eased;
+    setY(y);
+    // ticking sound as cells pass center
+    const idxAtCenter=Math.round((centerOffset()-y)/h);
+    if(idxAtCenter!==lastTick){ lastTick=idxAtCenter; if(p<0.98) sndTick(); }
+    // camera shake near the end
+    if(p>0.9){ const s=(1-p)*10; document.getElementById("reel").style.transform=`translateX(${(Math.random()-0.5)*s}px)`; }
+    if(p<1){ requestAnimationFrame(frame); }
+    else{ document.getElementById("reel").style.transform=""; land(list[winner]); }
+  }
+  requestAnimationFrame(frame);
+}
+
+function land(d){
+  spinning=false;
+  buzz([0,60,40,120]);
+  sndFanfare();
+  flash();
+  confettiBurst(160);
+  showKanpai();
+  store.count = store.count+1; renderCount();
+  setTimeout(()=>showResult(d), 260);
+}
+
+/* ============================================================
+   Result card
+   ============================================================ */
+function showResult(d){
+  document.getElementById("rEmo").textContent=d.emo;
+  document.getElementById("rName").textContent=d.name;
+  document.getElementById("rYomi").textContent=d.yomi;
+  document.getElementById("rCmt").textContent=d.cmt;
+  document.getElementById("rIng").innerHTML=d.ing.map(i=>`<span>${i}</span>`).join("");
+  document.getElementById("rSteps").innerHTML=d.steps.map(s=>`<li>${s}</li>`).join("");
+  const strLab=["","かる〜い","ライト","ふつう","しっかり","ガツン"][d.str];
+  const fizLab=["","なし","ほのか","そこそこ","しゅわ","爆炭酸"][d.fiz];
+  document.getElementById("rStrLab").textContent=strLab;
+  document.getElementById("rFizLab").textContent=fizLab;
+  const ov=document.getElementById("overlay"); ov.classList.add("show");
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    document.getElementById("rStrBar").style.width=(d.str/5*100)+"%";
+    document.getElementById("rFizBar").style.width=(d.fiz/5*100)+"%";
+  }));
+}
+function closeResult(){ document.getElementById("overlay").classList.remove("show"); document.getElementById("decide").disabled=false;
+  document.getElementById("hint").textContent="ボタンをタップして運命の一杯を"; }
+
+/* ============================================================
+   Effects: flash, confetti, bubbles, kanpai
+   ============================================================ */
+function flash(){
+  const f=document.createElement("div");
+  f.style.cssText="position:fixed;inset:0;z-index:65;background:#fff;pointer-events:none;opacity:.85;transition:opacity .4s;";
+  document.body.appendChild(f);
+  requestAnimationFrame(()=>{ f.style.opacity="0"; });
+  setTimeout(()=>f.remove(),450);
+}
+function showKanpai(){ const k=document.getElementById("kanpai"); k.classList.remove("show"); void k.offsetWidth; k.classList.add("show");
+  setTimeout(()=>k.classList.remove("show"),950); }
+
+/* confetti */
+const cCanvas=document.getElementById("confetti"), cx=cCanvas.getContext("2d");
+let confetti=[];
+const COLORS=["#ff2fb9","#39e6ff","#ffe14d","#b14bff","#ff9d2e","#ffffff"];
+function confettiBurst(n){
+  const W=cCanvas.width, H=cCanvas.height;
+  for(let i=0;i<n;i++){
+    confetti.push({
+      x:W/2 + (Math.random()-0.5)*80, y:H*0.42,
+      vx:(Math.random()-0.5)*16, vy:-6-Math.random()*14,
+      g:0.32+Math.random()*0.14, s:6+Math.random()*8,
+      rot:Math.random()*Math.PI, vr:(Math.random()-0.5)*0.4,
+      col:COLORS[(Math.random()*COLORS.length)|0], life:1,
+      shape:Math.random()<0.5?0:1,
+    });
+  }
+}
+/* bubbles background */
+const bCanvas=document.getElementById("bubbles"), bx=bCanvas.getContext("2d");
+let bubbles=[];
+function resize(){
+  for(const cv of [cCanvas,bCanvas]){ cv.width=innerWidth*devicePixelRatio; cv.height=innerHeight*devicePixelRatio; }
+  cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  bx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+addEventListener("resize",resize); resize();
+function seedBubbles(){
+  bubbles=[]; const n=Math.round(innerWidth*innerHeight/16000);
+  for(let i=0;i<n;i++) bubbles.push({
+    x:Math.random()*innerWidth, y:Math.random()*innerHeight,
+    r:2+Math.random()*7, sp:0.3+Math.random()*1.1, a:0.1+Math.random()*0.35,
+    hue:Math.random()<0.5?"57,230,255":"255,47,185", drift:(Math.random()-0.5)*0.4,
+  });
+}
+seedBubbles();
+function loop(){
+  // bubbles
+  bx.clearRect(0,0,innerWidth,innerHeight);
+  for(const b of bubbles){
+    b.y-=b.sp; b.x+=b.drift;
+    if(b.y<-10){ b.y=innerHeight+10; b.x=Math.random()*innerWidth; }
+    bx.beginPath(); bx.arc(b.x,b.y,b.r,0,7);
+    bx.fillStyle=`rgba(${b.hue},${b.a})`; bx.fill();
+  }
+  // confetti
+  cx.clearRect(0,0,innerWidth,innerHeight);
+  confetti=confetti.filter(p=>p.life>0 && p.y<innerHeight+40);
+  for(const p of confetti){
+    p.vy+=p.g; p.x+=p.vx; p.y+=p.vy; p.vx*=0.99; p.rot+=p.vr;
+    if(p.y>innerHeight*0.9) p.life-=0.02;
+    cx.save(); cx.translate(p.x,p.y); cx.rotate(p.rot); cx.globalAlpha=Math.max(0,p.life);
+    cx.fillStyle=p.col;
+    if(p.shape===0) cx.fillRect(-p.s/2,-p.s/2,p.s,p.s*0.6);
+    else{ cx.beginPath(); cx.arc(0,0,p.s/2,0,7); cx.fill(); }
+    cx.restore();
+  }
+  requestAnimationFrame(loop);
+}
+loop();
+
+/* ============================================================
+   Wire up UI
+   ============================================================ */
+function renderCount(){ document.getElementById("count").textContent=store.count; }
+function renderToggles(){
+  document.getElementById("tSound").classList.toggle("off",!store.sound);
+  document.getElementById("tHaptic").classList.toggle("off",!store.haptic);
+}
+renderCount(); renderToggles();
+
+document.getElementById("decide").addEventListener("click",()=>{ sndClick(); spin(); });
+document.getElementById("again").addEventListener("click",()=>{ closeResult(); setTimeout(spin,120); });
+document.getElementById("close").addEventListener("click",closeResult);
+document.getElementById("overlay").addEventListener("click",e=>{ if(e.target.id==="overlay") closeResult(); });
+
+document.getElementById("filters").addEventListener("click",e=>{
+  const c=e.target.closest(".chip"); if(!c) return;
+  filter=c.dataset.f;
+  [...document.querySelectorAll(".chip")].forEach(x=>x.classList.toggle("on",x===c));
+  buildStrip(pool()); setY(centerOffset()); sndTick();
+});
+
+document.getElementById("tSound").addEventListener("click",()=>{ store.sound=!store.sound; renderToggles(); if(store.sound) sndClick(); });
+document.getElementById("tHaptic").addEventListener("click",()=>{ store.haptic=!store.haptic; renderToggles(); buzz(30); });
+document.getElementById("tReset").addEventListener("click",()=>{ store.count=0; renderCount(); sndTick(); });
+
+/* keep reel centered on rotate/resize */
+addEventListener("resize",()=>{ buildStrip(pool()); setY(centerOffset()); });
+
+/* service worker for offline standalone use */
+if("serviceWorker" in navigator){
+  addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>
