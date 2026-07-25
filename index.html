@@ -177,6 +177,36 @@
   @keyframes kan{ 0%{ transform:scale(.3) rotate(-12deg); opacity:0; } 40%{ transform:scale(1.15) rotate(4deg); opacity:1; }
     70%{ transform:scale(1) rotate(0);} 100%{ transform:scale(1.4); opacity:0; } }
 
+  /* ---- spin FX ---- */
+  .reel-wrap{ position:relative; width:100%; max-width:560px; }
+  .reel-glow{ position:absolute; inset:-34px; z-index:-1; border-radius:44px; opacity:0; transition:opacity .3s;
+    background:conic-gradient(from 0deg, var(--neon-pink),var(--neon-cyan),var(--neon-yellow),var(--neon-purple),var(--neon-pink));
+    filter:blur(28px); }
+  body.spinning .reel-glow{ opacity:.8; animation:spinglow 1s linear infinite; }
+  @keyframes spinglow{ to{ transform:rotate(360deg);} }
+  .reel.spinning{ animation:reelhue .5s linear infinite;
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.20), inset 0 20px 40px rgba(0,0,0,.55),
+      0 0 60px rgba(255,47,185,.65), 0 0 130px rgba(57,230,255,.45); }
+  @keyframes reelhue{ to{ filter:hue-rotate(360deg);} }
+  .reel.hot{ box-shadow:inset 0 0 0 2px #fff, 0 0 70px var(--neon-yellow), 0 0 150px var(--neon-pink) !important; }
+
+  .reach{ position:fixed; z-index:66; left:50%; top:36%; transform:translate(-50%,-50%) scale(.4);
+    font-size:44px; font-weight:900; letter-spacing:.06em; color:#fff; opacity:0; pointer-events:none; white-space:nowrap;
+    text-shadow:0 0 20px var(--neon-pink),0 0 44px var(--neon-pink),0 0 60px var(--neon-yellow); }
+  .reach.show{ animation:reachpop .45s cubic-bezier(.2,1.4,.4,1) forwards, reachflash .28s steps(1) infinite .45s; }
+  @keyframes reachpop{ to{ opacity:1; transform:translate(-50%,-50%) scale(1);} }
+  @keyframes reachflash{ 50%{ color:var(--neon-yellow); transform:translate(-50%,-50%) scale(1.08);} }
+
+  .shock{ position:fixed; z-index:64; left:50%; top:42%; width:40px; height:40px; margin:-20px 0 0 -20px;
+    border-radius:50%; border:6px solid rgba(255,255,255,.95); pointer-events:none; animation:shock .6s ease-out forwards; }
+  @keyframes shock{ from{ transform:scale(0); opacity:.9; } to{ transform:scale(22); opacity:0; } }
+  .shock.c2{ border-color:var(--neon-cyan); animation-duration:.75s; }
+
+  .eburst{ position:fixed; z-index:63; pointer-events:none; transform:translate(-50%,-50%);
+    animation:eburst 1s ease-out forwards; }
+  @keyframes eburst{ 0%{ transform:translate(-50%,-50%) scale(.3); opacity:0; } 18%{ opacity:1; }
+    100%{ transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1.3) rotate(220deg); opacity:0; } }
+
   @media (max-height:680px){
     .reel{ height:160px; } .cell{ height:62px; } .reel-line{ height:62px; }
     .cell .emo{ font-size:32px; } .cell .nm{ font-size:22px; }
@@ -199,9 +229,12 @@
     </header>
 
     <div class="stage">
-      <div class="reel" id="reel">
-        <div class="reel-strip" id="strip"></div>
-        <div class="reel-line"></div>
+      <div class="reel-wrap">
+        <div class="reel-glow"></div>
+        <div class="reel" id="reel">
+          <div class="reel-strip" id="strip"></div>
+          <div class="reel-line"></div>
+        </div>
       </div>
       <button class="decide" id="decide">🎰 きめる！</button>
       <div class="hint" id="hint">ボタンをタップして運命の一杯を</div>
@@ -254,6 +287,7 @@
     </div>
   </div>
 
+  <div class="reach" id="reach">🔥 リーチ！！ 🔥</div>
   <div class="kanpai" id="kanpai"><span>🥂 かんぱーい！</span></div>
 
 <script>
@@ -368,33 +402,101 @@ function pool(){
 /* ============================================================
    Audio engine (WebAudio, no files)
    ============================================================ */
-let AC=null;
-function ac(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
-  if(AC && AC.state==="suspended") AC.resume(); return AC; }
-function tone(freq,t0,dur,type="triangle",vol=0.3){
+let AC=null, master=null, reverb=null;
+function makeImpulse(dur,decay){
+  const n=Math.floor(AC.sampleRate*dur), b=AC.createBuffer(2,n,AC.sampleRate);
+  for(let ch=0;ch<2;ch++){ const d=b.getChannelData(ch);
+    for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,decay); }
+  return b;
+}
+function ac(){
+  if(!AC){
+    try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; }
+    master=AC.createGain(); master.gain.value=0.95; master.connect(AC.destination);
+    reverb=AC.createConvolver(); reverb.buffer=makeImpulse(2.4,2.6);
+    const rg=AC.createGain(); rg.gain.value=0.24; reverb.connect(rg).connect(AC.destination);
+  }
+  if(AC.state==="suspended") AC.resume();
+  return AC;
+}
+/* route a node to dry master + a wet reverb send */
+function out(node,wet=0.3){
+  if(!master) return; node.connect(master);
+  if(reverb && wet>0){ const s=AC.createGain(); s.gain.value=wet; node.connect(s); s.connect(reverb); }
+}
+function tone(freq,t0,dur,type="triangle",vol=0.3,wet=0.3){
   const c=ac(); if(!c||!store.sound) return;
   const o=c.createOscillator(), g=c.createGain();
   o.type=type; o.frequency.setValueAtTime(freq,t0);
-  g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(vol,t0+0.01);
+  g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(vol,t0+0.008);
   g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
-  o.connect(g).connect(c.destination); o.start(t0); o.stop(t0+dur+0.02);
+  o.connect(g); out(g,wet); o.start(t0); o.stop(t0+dur+0.02);
 }
-function noiseBurst(t0,dur,vol=0.25){
+function boom(t0,f0,dur,vol,wet=0.2){ /* sub-bass impact */
   const c=ac(); if(!c||!store.sound) return;
-  const n=Math.floor(c.sampleRate*dur), buf=c.createBuffer(1,n,c.sampleRate), d=buf.getChannelData(0);
-  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
-  const s=c.createBufferSource(); s.buffer=buf;
-  const g=c.createGain(); g.gain.value=vol;
-  const f=c.createBiquadFilter(); f.type="bandpass"; f.frequency.value=1800;
-  s.connect(f).connect(g).connect(c.destination); s.start(t0);
+  const o=c.createOscillator(), g=c.createGain(); o.type="sine";
+  o.frequency.setValueAtTime(f0,t0); o.frequency.exponentialRampToValueAtTime(f0*0.32,t0+dur);
+  g.gain.setValueAtTime(vol,t0); g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  o.connect(g); out(g,wet); o.start(t0); o.stop(t0+dur+0.02);
 }
-function sndClick(){ const c=ac(); if(!c) return; tone(680,c.currentTime,0.06,"square",0.2); }
-function sndTick(){ const c=ac(); if(!c) return; tone(1200,c.currentTime,0.03,"square",0.12); }
-function sndDrumroll(dur){ const c=ac(); if(!c||!store.sound) return; let t=c.currentTime;
-  const n=Math.floor(dur/0.045); for(let i=0;i<n;i++){ noiseBurst(t,0.04,0.18); t+=0.045; } }
-function sndFanfare(){ const c=ac(); if(!c) return; const t=c.currentTime;
-  [ [523,0],[659,0.09],[784,0.18],[1046,0.28] ].forEach(([f,dt])=>tone(f,t+dt,0.5,"triangle",0.32));
-  tone(1568,t+0.28,0.7,"sine",0.18); noiseBurst(t+0.28,0.5,0.12); }
+function crash(t0,dur,vol,hp=4000){ /* cymbal / white-noise decay */
+  const c=ac(); if(!c||!store.sound) return;
+  const n=Math.floor(c.sampleRate*dur), b=c.createBuffer(1,n,c.sampleRate), d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,1.4);
+  const s=c.createBufferSource(); s.buffer=b;
+  const f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=hp;
+  const g=c.createGain(); g.gain.setValueAtTime(vol,t0); g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  s.connect(f).connect(g); out(g,0.5); s.start(t0);
+}
+function sndWhoosh(){ /* spin start */
+  const c=ac(); if(!c||!store.sound) return; const t=c.currentTime;
+  const n=Math.floor(c.sampleRate*0.5), b=c.createBuffer(1,n,c.sampleRate), d=b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1);
+  const s=c.createBufferSource(); s.buffer=b;
+  const f=c.createBiquadFilter(); f.type="bandpass"; f.Q.value=1.1;
+  f.frequency.setValueAtTime(280,t); f.frequency.exponentialRampToValueAtTime(3200,t+0.45);
+  const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.4,t+0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
+  s.connect(f).connect(g); out(g,0.4); s.start(t); s.stop(t+0.55);
+}
+let riserNodes=null;
+function sndRiser(dur){ /* rising tension bed across the whole spin */
+  const c=ac(); if(!c||!store.sound) return; const t=c.currentTime;
+  const g=c.createGain();
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.14,t+dur*0.65);
+  g.gain.linearRampToValueAtTime(0.26,t+dur); g.gain.exponentialRampToValueAtTime(0.0001,t+dur+0.15);
+  const f=c.createBiquadFilter(); f.type="lowpass"; f.Q.value=7;
+  f.frequency.setValueAtTime(180,t); f.frequency.exponentialRampToValueAtTime(4200,t+dur);
+  g.connect(f); out(f,0.35);
+  const oscs=[55,55.4,110].map(base=>{ const o=c.createOscillator(); o.type="sawtooth";
+    o.frequency.setValueAtTime(base,t); o.frequency.exponentialRampToValueAtTime(base*4.2,t+dur);
+    o.connect(g); o.start(t); o.stop(t+dur+0.2); return o; });
+  riserNodes={g,oscs};
+}
+function stopRiser(){ if(riserNodes){ const t=ac().currentTime;
+  try{ riserNodes.g.gain.cancelScheduledValues(t); riserNodes.g.gain.setValueAtTime(riserNodes.g.gain.value,t);
+    riserNodes.g.gain.exponentialRampToValueAtTime(0.0001,t+0.1); }catch(e){} riserNodes=null; } }
+function sndClick(){ const c=ac(); if(!c) return; const t=c.currentTime;
+  tone(520,t,0.08,"square",0.18,0.1); tone(780,t+0.02,0.08,"square",0.13,0.1); }
+function sndTick(){ const c=ac(); if(!c) return; tone(1200,c.currentTime,0.03,"square",0.12,0.1); }
+function sndTickP(p){ /* reel tick, pitch rises as it slows */
+  const c=ac(); if(!c) return; tone(680+p*1000,c.currentTime,0.032,"square",0.13,0.08); }
+function sndReach(){ /* near-miss stinger + heartbeat */
+  const c=ac(); if(!c||!store.sound) return; const t=c.currentTime;
+  tone(880,t,0.55,"sawtooth",0.13,0.5); tone(1174,t,0.55,"sawtooth",0.11,0.5);
+  boom(t,95,0.2,0.5,0.4); boom(t+0.34,95,0.2,0.5,0.4);
+  crash(t,0.3,0.12,7000);
+}
+function sndWin(){ /* big landing */
+  const c=ac(); if(!c||!store.sound) return; const t=c.currentTime;
+  boom(t,150,0.55,0.7,0.25);          // impact
+  crash(t,1.3,0.34);                  // cymbal
+  [523,659,784,1046].forEach(f=>tone(f,t,0.6,"square",0.15,0.4));   // power chord
+  const arp=[784,988,1174,1568,1976,2637];                          // rising sparkle
+  arp.forEach((f,i)=>tone(f,t+0.12+i*0.055,0.4,"triangle",0.13,0.6));
+  tone(1046,t+0.42,0.8,"sawtooth",0.09,0.5);
+  boom(t+0.42,110,0.6,0.4,0.3);
+}
 
 /* ============================================================
    Haptics
@@ -408,7 +510,7 @@ const strip=document.getElementById("strip");
 function cellH(){ return document.querySelector('.reel-line').offsetHeight; }
 let stripItems=[];
 function buildStrip(list){
-  const reps=Math.max(6, Math.ceil(60/list.length));
+  const reps=Math.max(12, Math.ceil(140/list.length));
   stripItems=[];
   for(let r=0;r<reps;r++) for(const d of list) stripItems.push(d);
   strip.innerHTML = stripItems.map(d=>
@@ -435,42 +537,65 @@ function spin(){
   let targetIdx=baseCount - list.length + winner;
   const targetY = centerOffset() - targetIdx*h;
 
+  const reel=document.getElementById("reel");
   spinning=true;
   document.getElementById("decide").disabled=true;
-  document.getElementById("hint").textContent="運命をシャッフル中…";
-  ac(); sndDrumroll(2.1); buzz([0,25,25,25,25,25,25,25,25,25,25,25,25]);
+  document.getElementById("hint").textContent="運命をシャッフル中…🎰";
+  reel.classList.add("spinning"); document.body.classList.add("spinning");
+
+  const DUR=3900;
+  ac(); sndWhoosh(); sndRiser(DUR/1000);
+  buzz([0,20,30,20,30,20,30,20,30,20,30]);
 
   const startY=centerOffset();
-  const dur=2200;
   const t0=performance.now();
-  let lastTick=-1;
-  function easeOutBack(x){ const c1=1.2, c3=c1+1; return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2); }
+  let lastIdx=-1, lastTickT=0, prevY=startY, reached=false;
+
+  // fast → long slowdown → tiny settle "click"
+  function spinEase(p){
+    if(p<0.9){ const q=p/0.9; return (1-Math.pow(1-q,4))*0.9855; }
+    const q=(p-0.9)/0.1;
+    const settle=Math.sin(q*Math.PI*3)*Math.pow(1-q,2)*0.02;
+    return 0.9855 + 0.0145*q + settle;
+  }
   function frame(now){
-    let p=(now-t0)/dur; if(p>1) p=1;
-    const e=p<0.86 ? (1-Math.pow(1-p/0.86,3)) : easeOutBack((p-0.86)/0.14)*0 + 1; // fast then settle
-    const eased = p<1 ? 1-Math.pow(1-p,3) : 1;
-    const y=startY+(targetY-startY)*eased;
+    let p=(now-t0)/DUR; if(p>1) p=1;
+    const y=startY+(targetY-startY)*spinEase(p);
     setY(y);
-    // ticking sound as cells pass center
-    const idxAtCenter=Math.round((centerOffset()-y)/h);
-    if(idxAtCenter!==lastTick){ lastTick=idxAtCenter; if(p<0.98) sndTick(); }
-    // camera shake near the end
-    if(p>0.9){ const s=(1-p)*10; document.getElementById("reel").style.transform=`translateX(${(Math.random()-0.5)*s}px)`; }
-    if(p<1){ requestAnimationFrame(frame); }
-    else{ document.getElementById("reel").style.transform=""; land(list[winner]); }
+    // speed → motion blur + bubble boost
+    const speed=Math.abs(y-prevY); prevY=y;
+    strip.style.filter = speed>1.5 ? `blur(${Math.min(7,speed*0.16)}px)` : "none";
+    spinBoost = 1 + Math.min(7, speed*0.24);
+    // pitched ticks as cells cross the line (throttled so it never machine-guns)
+    const idx=Math.round((centerOffset()-y)/h);
+    if(idx!==lastIdx && now-lastTickT>26){ lastIdx=idx; lastTickT=now; if(p<0.996) sndTickP(p); }
+    // リーチ！ near-miss tease
+    if(!reached && p>0.82){ reached=true; showReach(); sndReach(); buzz([0,130,70,130]); reel.classList.add("hot"); }
+    // shake: subtle early, violent at the drop
+    const sh = p<0.5 ? 1.4 : 2 + (p-0.5)*24;
+    reel.style.transform=`translate(${(Math.random()-0.5)*sh}px, ${(Math.random()-0.5)*sh*0.4}px)`;
+    if(p<1) requestAnimationFrame(frame);
+    else{
+      reel.style.transform=""; strip.style.filter="none";
+      reel.classList.remove("spinning","hot"); document.body.classList.remove("spinning");
+      hideReach(); stopRiser(); land(list[winner]);
+    }
   }
   requestAnimationFrame(frame);
 }
 
 function land(d){
-  spinning=false;
-  buzz([0,60,40,120]);
-  sndFanfare();
+  spinning=false; spinBoost=1;
+  buzz([0,90,50,200,40,140]);
+  sndWin();
   flash();
-  confettiBurst(160);
+  shockwave();
+  confettiBurst(240);
+  setTimeout(()=>confettiBurst(120), 240);
+  emojiBurst(d.emo);
   showKanpai();
   store.count = store.count+1; renderCount();
-  setTimeout(()=>showResult(d), 260);
+  setTimeout(()=>showResult(d), 640);
 }
 
 /* ============================================================
@@ -508,6 +633,21 @@ function flash(){
 }
 function showKanpai(){ const k=document.getElementById("kanpai"); k.classList.remove("show"); void k.offsetWidth; k.classList.add("show");
   setTimeout(()=>k.classList.remove("show"),950); }
+function showReach(){ const r=document.getElementById("reach"); r.classList.remove("show"); void r.offsetWidth; r.classList.add("show"); }
+function hideReach(){ document.getElementById("reach").classList.remove("show"); }
+function shockwave(){
+  for(const cls of ["","c2"]){ const w=document.createElement("div"); w.className="shock "+cls;
+    document.body.appendChild(w); setTimeout(()=>w.remove(),800); }
+}
+function emojiBurst(emo){
+  for(let i=0;i<16;i++){ const s=document.createElement("div"); s.className="eburst"; s.textContent=emo;
+    const ang=Math.random()*Math.PI*2, dist=110+Math.random()*200;
+    s.style.setProperty("--dx",Math.cos(ang)*dist+"px");
+    s.style.setProperty("--dy",(Math.sin(ang)*dist-90)+"px");
+    s.style.left="50%"; s.style.top="42%"; s.style.fontSize=(22+Math.random()*24)+"px";
+    document.body.appendChild(s); setTimeout(()=>s.remove(),1100);
+  }
+}
 
 /* confetti */
 const cCanvas=document.getElementById("confetti"), cx=cCanvas.getContext("2d");
@@ -528,7 +668,7 @@ function confettiBurst(n){
 }
 /* bubbles background */
 const bCanvas=document.getElementById("bubbles"), bx=bCanvas.getContext("2d");
-let bubbles=[];
+let bubbles=[], spinBoost=1;
 function resize(){
   for(const cv of [cCanvas,bCanvas]){ cv.width=innerWidth*devicePixelRatio; cv.height=innerHeight*devicePixelRatio; }
   cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
@@ -548,10 +688,11 @@ function loop(){
   // bubbles
   bx.clearRect(0,0,innerWidth,innerHeight);
   for(const b of bubbles){
-    b.y-=b.sp; b.x+=b.drift;
+    b.y-=b.sp*spinBoost; b.x+=b.drift*(0.4+spinBoost*0.6);
     if(b.y<-10){ b.y=innerHeight+10; b.x=Math.random()*innerWidth; }
     bx.beginPath(); bx.arc(b.x,b.y,b.r,0,7);
-    bx.fillStyle=`rgba(${b.hue},${b.a})`; bx.fill();
+    const a=Math.min(0.7, b.a*(1+(spinBoost-1)*0.25));
+    bx.fillStyle=`rgba(${b.hue},${a})`; bx.fill();
   }
   // confetti
   cx.clearRect(0,0,innerWidth,innerHeight);
